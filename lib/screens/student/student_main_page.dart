@@ -13,6 +13,8 @@ import 'progress_page.dart';
 import 'student_assignments_page.dart';
 import 'student_dashboard_page.dart';
 import 'student_profile_page.dart';
+import 'activities_scores_page.dart';
+import 'posted_grades_page.dart';
 
 class StudentMainScreen extends StatefulWidget {
   const StudentMainScreen({super.key});
@@ -21,7 +23,13 @@ class StudentMainScreen extends StatefulWidget {
   State<StudentMainScreen> createState() => _StudentMainScreenState();
 }
 
-class _StudentMainScreenState extends State<StudentMainScreen> {
+class _StudentMainScreenState extends State<StudentMainScreen>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _tabAnimation = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 240),
+    value: 1,
+  );
   int _selectedIndex = 0;
   final Set<int> _openedTabs = <int>{};
   late final List<Widget> _pages;
@@ -44,6 +52,8 @@ class _StudentMainScreenState extends State<StudentMainScreen> {
       const StudentProfileScreen(),
       const StudentMessagesScreen(),
       const LearnerAssistantScreen(role: 'student'),
+      const ActivitiesScoresScreen(),
+      const PostedGradesScreen(),
     ];
 
     _startNotificationPopups();
@@ -52,6 +62,7 @@ class _StudentMainScreenState extends State<StudentMainScreen> {
   @override
   void dispose() {
     _notificationSubscription?.cancel();
+    _tabAnimation.dispose();
     super.dispose();
   }
 
@@ -67,6 +78,9 @@ class _StudentMainScreenState extends State<StudentMainScreen> {
       _selectedIndex = index;
       _openedTabs.add(index);
     });
+    if (!MediaQuery.disableAnimationsOf(context)) {
+      _tabAnimation.forward(from: 0);
+    }
   }
 
   void _startNotificationPopups() {
@@ -139,13 +153,19 @@ class _StudentMainScreenState extends State<StudentMainScreen> {
       body: Center(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 1200),
-          child: IndexedStack(
-            index: _selectedIndex,
-            children: List.generate(
-              _pages.length,
-              (index) => index < 5 || _openedTabs.contains(index)
-                  ? _pages[index]
-                  : const SizedBox.shrink(),
+          child: FadeTransition(
+            opacity: CurvedAnimation(
+              parent: _tabAnimation,
+              curve: Curves.easeOutCubic,
+            ),
+            child: IndexedStack(
+              index: _selectedIndex,
+              children: List.generate(
+                _pages.length,
+                (index) => index < 5 || _openedTabs.contains(index)
+                    ? _pages[index]
+                    : const SizedBox.shrink(),
+              ),
             ),
           ),
         ),

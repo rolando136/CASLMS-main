@@ -45,6 +45,7 @@ dependencies:
   firebase_app_check: ^0.4.7
   archive: ^4.2.0
   shared_preferences: ^2.5.6
+  web: ^1.1.1
 
 dev_dependencies:
   flutter_test:
@@ -72,6 +73,16 @@ flutter:
   assets:
     - assets/images/caslms.png
     - assets/images/CASlogo.jpg
+    - assets/images/ssu.jpg
+    - assets/images/instructor_create_course.png
+    - assets/images/instructor_add_section.png
+    - assets/images/instructor_enroll_students.png
+    - assets/images/instructor_upload_materials.png
+    - assets/images/instructor_create_assessment.png
+    - assets/images/instructor_ai_assistant.png
+    - assets/images/instructor_grading_rubrics.png
+    - assets/images/instructor_check_submissions.png
+    
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images

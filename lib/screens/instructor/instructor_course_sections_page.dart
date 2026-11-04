@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 
@@ -38,11 +40,35 @@ class _InstructorCourseSectionsScreenState
   late Future<List<Map<String, dynamic>>> _sectionsFuture;
   String _courseTitle = 'Course Details';
   String _courseCode = '';
+  StreamSubscription? _enrollmentChanges;
+  Timer? _refreshTimer;
 
   @override
   void initState() {
     super.initState();
     _sectionsFuture = _load();
+    _enrollmentChanges = FirebaseFirestore.instance
+        .collection('enrollments')
+        .where('courseId', isEqualTo: widget.courseId)
+        .snapshots()
+        .skip(1)
+        .listen(
+          (_) {
+            _refreshTimer?.cancel();
+            _refreshTimer = Timer(const Duration(milliseconds: 200), () {
+              if (mounted) _refresh();
+            });
+          },
+          onError: (Object error) =>
+              _notice('Unable to update section counts. Pull to refresh.'),
+        );
+  }
+
+  @override
+  void dispose() {
+    _refreshTimer?.cancel();
+    _enrollmentChanges?.cancel();
+    super.dispose();
   }
 
   String _text(Object? value) => (value ?? '').toString().trim();
@@ -90,9 +116,7 @@ class _InstructorCourseSectionsScreenState
         content: Text(message),
         behavior: SnackBarBehavior.floating,
         backgroundColor: heading,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       ),
     );
   }
@@ -128,7 +152,7 @@ class _InstructorCourseSectionsScreenState
                       Container(
                         padding: const EdgeInsets.all(12),
                         decoration: BoxDecoration(
-                          color: teal.withOpacity(0.12),
+                          color: teal.withValues(alpha: 0.12),
                           borderRadius: BorderRadius.circular(14),
                         ),
                         child: Icon(
@@ -176,13 +200,21 @@ class _InstructorCourseSectionsScreenState
                     initialValue: name,
                     maxLength: 80,
                     style: const TextStyle(
-                        fontSize: 14, fontWeight: FontWeight.w600, color: heading),
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: heading,
+                    ),
                     decoration: InputDecoration(
                       labelText: 'Section Name',
                       labelStyle: const TextStyle(color: secondaryText),
                       hintText: 'e.g., BSIT 1A',
-                      hintStyle: TextStyle(color: secondaryText.withOpacity(0.5)),
-                      prefixIcon: const Icon(Icons.groups_outlined, color: secondaryText),
+                      hintStyle: TextStyle(
+                        color: secondaryText.withValues(alpha: 0.5),
+                      ),
+                      prefixIcon: const Icon(
+                        Icons.groups_outlined,
+                        color: secondaryText,
+                      ),
                       filled: true,
                       fillColor: background,
                       contentPadding: const EdgeInsets.symmetric(
@@ -212,13 +244,21 @@ class _InstructorCourseSectionsScreenState
                     initialValue: identifier,
                     maxLength: 30,
                     style: const TextStyle(
-                        fontSize: 14, fontWeight: FontWeight.w600, color: heading),
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: heading,
+                    ),
                     decoration: InputDecoration(
                       labelText: 'Section Identifier',
                       labelStyle: const TextStyle(color: secondaryText),
                       hintText: 'e.g., BSIT-1A',
-                      hintStyle: TextStyle(color: secondaryText.withOpacity(0.5)),
-                      prefixIcon: const Icon(Icons.tag_rounded, color: secondaryText),
+                      hintStyle: TextStyle(
+                        color: secondaryText.withValues(alpha: 0.5),
+                      ),
+                      prefixIcon: const Icon(
+                        Icons.tag_rounded,
+                        color: secondaryText,
+                      ),
                       filled: true,
                       fillColor: background,
                       contentPadding: const EdgeInsets.symmetric(
@@ -254,7 +294,9 @@ class _InstructorCourseSectionsScreenState
                         style: TextButton.styleFrom(
                           foregroundColor: secondaryText,
                           padding: const EdgeInsets.symmetric(
-                              horizontal: 18, vertical: 14),
+                            horizontal: 18,
+                            vertical: 14,
+                          ),
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(12),
                           ),
@@ -268,14 +310,18 @@ class _InstructorCourseSectionsScreenState
                       FilledButton(
                         onPressed: () {
                           if (formKey.currentState?.validate() == true) {
-                            Navigator.pop(
-                                dialogContext, [name.trim(), identifier.trim()]);
+                            Navigator.pop(dialogContext, [
+                              name.trim(),
+                              identifier.trim(),
+                            ]);
                           }
                         },
                         style: FilledButton.styleFrom(
                           backgroundColor: teal,
                           padding: const EdgeInsets.symmetric(
-                              horizontal: 24, vertical: 14),
+                            horizontal: 24,
+                            vertical: 14,
+                          ),
                           elevation: 0,
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(12),
@@ -284,7 +330,9 @@ class _InstructorCourseSectionsScreenState
                         child: Text(
                           section == null ? 'Create Section' : 'Save Changes',
                           style: const TextStyle(
-                              fontWeight: FontWeight.w800, fontSize: 13.5),
+                            fontWeight: FontWeight.w800,
+                            fontSize: 13.5,
+                          ),
                         ),
                       ),
                     ],
@@ -400,7 +448,7 @@ class _InstructorCourseSectionsScreenState
         border: Border.all(color: borderColor),
         boxShadow: [
           BoxShadow(
-            color: heading.withOpacity(0.035),
+            color: heading.withValues(alpha: 0.035),
             blurRadius: 16,
             offset: const Offset(0, 5),
           ),
@@ -410,11 +458,7 @@ class _InstructorCourseSectionsScreenState
     );
   }
 
-  Widget _sectionHeading(
-    String title,
-    String subtitle, {
-    Widget? trailing,
-  }) {
+  Widget _sectionHeading(String title, String subtitle, {Widget? trailing}) {
     return Row(
       children: [
         Expanded(
@@ -441,10 +485,7 @@ class _InstructorCourseSectionsScreenState
             ],
           ),
         ),
-        if (trailing != null) ...[
-          const SizedBox(width: 12),
-          trailing,
-        ],
+        if (trailing != null) ...[const SizedBox(width: 12), trailing],
       ],
     );
   }
@@ -458,7 +499,7 @@ class _InstructorCourseSectionsScreenState
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
       decoration: BoxDecoration(
-        color: backgroundColor ?? color.withOpacity(0.10),
+        color: backgroundColor ?? color.withValues(alpha: 0.10),
         borderRadius: BorderRadius.circular(30),
       ),
       child: Row(
@@ -578,10 +619,7 @@ class _InstructorCourseSectionsScreenState
                     ],
                   ),
                 ),
-                if (trailing != null) ...[
-                  const SizedBox(width: 8),
-                  trailing,
-                ],
+                if (trailing != null) ...[const SizedBox(width: 8), trailing],
               ],
             ),
           ),
@@ -649,10 +687,7 @@ class _InstructorCourseSectionsScreenState
         leading: IconButton(
           tooltip: 'Back',
           onPressed: () => Navigator.of(context).maybePop(),
-          icon: const Icon(
-            Icons.arrow_back_rounded,
-            color: heading,
-          ),
+          icon: const Icon(Icons.arrow_back_rounded, color: heading),
         ),
         title: const Text(
           'Course Details',
@@ -716,9 +751,7 @@ class _InstructorCourseSectionsScreenState
                       const SizedBox(height: 16),
                       FilledButton.icon(
                         onPressed: _refresh,
-                        style: FilledButton.styleFrom(
-                          backgroundColor: teal,
-                        ),
+                        style: FilledButton.styleFrom(backgroundColor: teal),
                         icon: const Icon(Icons.refresh_rounded),
                         label: const Text('Try again'),
                       ),
@@ -772,8 +805,7 @@ class _InstructorCourseSectionsScreenState
                             _emptyState(
                               icon: Icons.groups_outlined,
                               title: 'No sections yet',
-                              message:
-                                  'Add your first section to start enrolling students.',
+                              message: 'Add your first section to start enrolling students.',
                             )
                           else
                             ...sections.map(_buildSectionCard),
@@ -851,6 +883,7 @@ class _InstructorCourseSectionsScreenState
       subtitle: [
         if (identifier.isNotEmpty) identifier,
         'Status: ${archived ? 'Archived' : 'Active'}',
+        '${section['studentCount'] ?? 0} students',
         if (legacy) 'Original Section',
       ].join(' • '),
       trailing: PopupMenuButton<String>(
