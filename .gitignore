@@ -49,3 +49,9 @@ app.*.map.json
 
 .vercel
 .env*
+
+# Local/generated tooling artifacts
+.codex-backups/
+supabase/functions/node_modules/
+web/vendor/
+

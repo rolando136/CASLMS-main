@@ -3,8 +3,10 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
 import 'instructor_ui.dart';
+import '../shared/grading_ui.dart';
 
 import 'instructor_assessment_grading_page.dart';
+import 'instructor_semester_grades_page.dart';
 
 class InstructorGradingScreen extends StatefulWidget {
   const InstructorGradingScreen({super.key});
@@ -49,6 +51,7 @@ class _InstructorGradingScreenState extends State<InstructorGradingScreen> {
   String _selectedFilter = 'submitted';
 
   List<Map<String, dynamic>> _submissions = [];
+  List<Map<String, dynamic>> _externalAssessments = [];
 
   // ============================================================
   // INIT
@@ -122,6 +125,7 @@ class _InstructorGradingScreenState extends State<InstructorGradingScreen> {
               .get();
 
       final List<Map<String, dynamic>> loadedSubmissions = [];
+      final List<Map<String, dynamic>> manualAssessments = [];
 
       // ----------------------------------------------------------
       // PROCESS EACH OWNED COURSE
@@ -165,6 +169,15 @@ class _InstructorGradingScreenState extends State<InstructorGradingScreen> {
         final Map<String, Map<String, dynamic>> assessmentById = {};
 
         for (final document in assessmentSnapshot.docs) {
+          final item = document.data();
+          if (item['deliveryType'] == 'external_link' &&
+              ['published', 'closed'].contains(item['status'])) {
+            manualAssessments.add({
+              ...item,
+              'assessmentId': document.id,
+              'courseCode': course['code'],
+            });
+          }
           assessmentById[document.id] = {
             ...document.data(),
             'id': document.id,
@@ -283,6 +296,7 @@ class _InstructorGradingScreenState extends State<InstructorGradingScreen> {
 
       setState(() {
         _submissions = loadedSubmissions;
+        _externalAssessments = manualAssessments;
 
         _isLoading = false;
       });
@@ -366,6 +380,46 @@ class _InstructorGradingScreenState extends State<InstructorGradingScreen> {
     }
 
     await _loadGradingData();
+  }
+
+  void _openSemesterGrades() => Navigator.of(context).push(
+    GradeRoute<void>(builder: (_) => const InstructorSemesterGradesScreen()),
+  );
+
+  Future<void> _selectManualAssessment() async {
+    if (_externalAssessments.isEmpty) {
+      _showError('Publish an external quiz or assessment first.');
+      return;
+    }
+    final selected = await showDialog<Map<String, dynamic>>(
+      context: context,
+      builder: (dialog) => AlertDialog(
+        title: const Text('Manual Grade Input'),
+        content: SizedBox(
+          width: 440,
+          child: ListView(
+            shrinkWrap: true,
+            children: [
+              for (final assessment in _externalAssessments)
+                ListTile(
+                  title: Text((assessment['title'] ?? 'Assessment').toString()),
+                  subtitle: Text(
+                    '${assessment['courseCode'] ?? ''} • ${assessment['totalPoints']} points',
+                  ),
+                  onTap: () => Navigator.pop(dialog, assessment),
+                ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialog),
+            child: const Text('Cancel'),
+          ),
+        ],
+      ),
+    );
+    if (selected != null && mounted) await _openGrading(selected);
   }
 
   // ============================================================
@@ -507,7 +561,7 @@ class _InstructorGradingScreenState extends State<InstructorGradingScreen> {
         centerTitle: true,
 
         title: const Text(
-          'Pending Grading',
+          'Grades & Feedback',
           style: TextStyle(
             color: textDark,
             fontSize: 18,
@@ -516,14 +570,23 @@ class _InstructorGradingScreenState extends State<InstructorGradingScreen> {
         ),
 
         actions: [
-          IconButton(
-            tooltip: 'Refresh',
-
-            onPressed: _loadGradingData,
-
-            icon: const Icon(Icons.refresh_rounded, color: textDark),
+          RoundGradeAction(
+            icon: Icons.edit_note_rounded,
+            label: 'Manual Grade Input',
+            onTap: _isLoading ? null : _selectManualAssessment,
           ),
-
+          const SizedBox(width: 8),
+          RoundGradeAction(
+            icon: Icons.calculate_outlined,
+            label: 'Compute & Finalize Semester Grades',
+            onTap: _openSemesterGrades,
+          ),
+          const SizedBox(width: 8),
+          RoundGradeAction(
+            icon: Icons.refresh_rounded,
+            label: 'Refresh grading',
+            onTap: _isLoading ? null : _loadGradingData,
+          ),
           const SizedBox(width: 8),
         ],
       ),
@@ -566,6 +629,47 @@ class _InstructorGradingScreenState extends State<InstructorGradingScreen> {
         padding: const EdgeInsets.fromLTRB(22, 12, 22, 40),
 
         children: [
+          const GradeEntrance(
+            child: GradeHero(
+              title: 'A clearer path to grading.',
+              subtitle: 'Review submissions, enter external scores, then preview and post semester grades.',
+              icon: Icons.school_outlined,
+              accent: gradeTeal,
+              eyebrow: 'INSTRUCTOR WORKSPACE',
+            ),
+          ),
+          const SizedBox(height: 16),
+          LayoutBuilder(
+            builder: (context, constraints) => Wrap(
+              spacing: 14,
+              runSpacing: 14,
+              children: [
+                SizedBox(
+                  width: constraints.maxWidth < 650
+                      ? constraints.maxWidth
+                      : (constraints.maxWidth - 14) / 2,
+                  child: GradeShortcut(
+                    icon: Icons.edit_note_rounded,
+                    title: 'Manual Scores',
+                    subtitle: 'Enter results from Google Forms and external assessments.',
+                    onTap: _selectManualAssessment,
+                  ),
+                ),
+                SizedBox(
+                  width: constraints.maxWidth < 650
+                      ? constraints.maxWidth
+                      : (constraints.maxWidth - 14) / 2,
+                  child: GradeShortcut(
+                    icon: Icons.calculate_outlined,
+                    title: 'Semester Grades',
+                    subtitle: 'Choose a class, set weights, review and post.',
+                    onTap: _openSemesterGrades,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 22),
           // ======================================================
           // SUMMARY
           // ======================================================

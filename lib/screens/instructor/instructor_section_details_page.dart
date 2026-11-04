@@ -1,8 +1,15 @@
+import '../shared/grading_ui.dart';
+
+import 'dart:async';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 
 import '../../services/course_section_service.dart';
+import '../../services/enrollment_membership.dart';
+import '../shared/live_classes_page.dart';
 import 'instructor_assessment_grading_page.dart';
+import 'instructor_semester_grades_page.dart';
 import 'instructor_class_details_page.dart';
 
 class InstructorSectionDetailsScreen extends StatefulWidget {
@@ -58,6 +65,8 @@ class _InstructorSectionDetailsScreenState
 
   bool _transferring = false;
   bool _overviewExpanded = false;
+  final List<StreamSubscription> _changes = [];
+  Timer? _refreshTimer;
 
   String _text(Object? value) => (value ?? '').toString().trim();
 
@@ -65,6 +74,34 @@ class _InstructorSectionDetailsScreenState
   void initState() {
     super.initState();
     _future = _load();
+    for (final collection in ['enrollments', 'assessmentSubmissions']) {
+      _changes.add(
+        _db
+            .collection(collection)
+            .where('courseId', isEqualTo: widget.courseId)
+            .snapshots()
+            .skip(1)
+            .listen(
+              (_) {
+                _refreshTimer?.cancel();
+                _refreshTimer = Timer(const Duration(milliseconds: 200), () {
+                  if (mounted) _refresh();
+                });
+              },
+              onError: (Object error) =>
+                  _notice('Unable to refresh section data. Please refresh.'),
+            ),
+      );
+    }
+  }
+
+  @override
+  void dispose() {
+    _refreshTimer?.cancel();
+    for (final change in _changes) {
+      change.cancel();
+    }
+    super.dispose();
   }
 
   Future<_SectionViewData> _load() async {
@@ -73,8 +110,10 @@ class _InstructorSectionDetailsScreenState
       sectionId: widget.sectionId,
     );
 
-    final courseDocument =
-        await _db.collection('courses').doc(widget.courseId).get();
+    final courseDocument = await _db
+        .collection('courses')
+        .doc(widget.courseId)
+        .get();
 
     final course = courseDocument.data();
 
@@ -105,23 +144,24 @@ class _InstructorSectionDetailsScreenState
     final originalCode = _text(course['classCode']);
 
     String enrollmentSection(Map<String, dynamic> enrollment) {
-      final explicitSection = _text(enrollment['sectionId']);
-      return explicitSection.isEmpty ? originalCode : explicitSection;
+      return EnrollmentMembership.sectionId(enrollment, originalCode);
     }
 
-    final allStudents = enrollmentDocuments.docs
-        .map((doc) => <String, dynamic>{...doc.data(), 'id': doc.id})
-        .where((data) => _text(data['status']) == 'active')
-        .toList();
+    final allStudents = EnrollmentMembership.uniqueActive(
+      enrollmentDocuments.docs.map(
+        (doc) => <String, dynamic>{...doc.data(), 'id': doc.id},
+      ),
+    );
 
     final students = allStudents
         .where((data) => enrollmentSection(data) == widget.sectionId)
         .toList();
 
     students.sort(
-      (a, b) => _text(a['studentName'])
-          .toLowerCase()
-          .compareTo(_text(b['studentName']).toLowerCase()),
+      (a, b) =>
+          _text(a['studentName'])
+              .toLowerCase()
+              .compareTo(_text(b['studentName']).toLowerCase()),
     );
 
     final modules = moduleDocuments.docs
@@ -146,14 +186,14 @@ class _InstructorSectionDetailsScreenState
         .where((data) => _text(data['sectionId']).isEmpty)
         .length;
 
-    final sectionAssessmentIds =
-        assessments.map((data) => _text(data['id'])).toSet();
+    final sectionAssessmentIds = assessments
+        .map((data) => _text(data['id']))
+        .toSet();
 
     final submissions = submissionDocuments.docs
         .map((doc) => <String, dynamic>{...doc.data(), 'id': doc.id})
         .where(
-          (data) =>
-              sectionAssessmentIds.contains(_text(data['assessmentId'])),
+          (data) => sectionAssessmentIds.contains(_text(data['assessmentId'])),
         )
         .toList();
 
@@ -190,9 +230,7 @@ class _InstructorSectionDetailsScreenState
         content: Text(message),
         behavior: SnackBarBehavior.floating,
         backgroundColor: heading,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       ),
     );
   }
@@ -211,8 +249,9 @@ class _InstructorSectionDetailsScreenState
 
     final candidates = data.allStudents.where((student) {
       final assignedSection = _text(student['sectionId']);
-      final effectiveSection =
-          assignedSection.isEmpty ? originalCode : assignedSection;
+      final effectiveSection = assignedSection.isEmpty
+          ? originalCode
+          : assignedSection;
 
       return effectiveSection != widget.sectionId &&
           _text(student['studentId']).isNotEmpty;
@@ -240,9 +279,7 @@ class _InstructorSectionDetailsScreenState
                   backgroundColor: const Color(0xFFE0F2F1),
                   foregroundColor: darkTeal,
                   child: Text(
-                    (name.isNotEmpty ? name : id)
-                        .substring(0, 1)
-                        .toUpperCase(),
+                    (name.isNotEmpty ? name : id).substring(0, 1).toUpperCase(),
                   ),
                 ),
                 title: Text(name.isEmpty ? id : name),
@@ -315,7 +352,7 @@ class _InstructorSectionDetailsScreenState
     if (assessmentId.isEmpty) return;
 
     await Navigator.of(context).push(
-      MaterialPageRoute<void>(
+      GradeRoute<void>(
         builder: (_) =>
             InstructorAssessmentGradingScreen(assessmentId: assessmentId),
       ),
@@ -365,11 +402,7 @@ class _InstructorSectionDetailsScreenState
     );
   }
 
-  Widget _sectionHeading(
-    String title,
-    String subtitle, {
-    Widget? trailing,
-  }) {
+  Widget _sectionHeading(String title, String subtitle, {Widget? trailing}) {
     return Row(
       children: [
         Expanded(
@@ -396,10 +429,7 @@ class _InstructorSectionDetailsScreenState
             ],
           ),
         ),
-        if (trailing != null) ...[
-          const SizedBox(width: 12),
-          trailing,
-        ],
+        if (trailing != null) ...[const SizedBox(width: 12), trailing],
       ],
     );
   }
@@ -595,10 +625,7 @@ class _InstructorSectionDetailsScreenState
                     ],
                   ),
                 ),
-                if (trailing != null) ...[
-                  const SizedBox(width: 8),
-                  trailing,
-                ],
+                if (trailing != null) ...[const SizedBox(width: 8), trailing],
               ],
             ),
           ),
@@ -836,10 +863,7 @@ class _InstructorSectionDetailsScreenState
                 ],
               ),
             ),
-            secondChild: const SizedBox(
-              width: double.infinity,
-              height: 0,
-            ),
+            secondChild: const SizedBox(width: double.infinity, height: 0),
           ),
         ],
       ),
@@ -896,8 +920,7 @@ class _InstructorSectionDetailsScreenState
                 _emptyState(
                   icon: Icons.people_outline_rounded,
                   title: 'No students yet',
-                  message:
-                      'Active students assigned to this section will appear here.',
+                  message: 'Active students assigned to this section will appear here.',
                 )
               else
                 ...data.students.map((student) {
@@ -972,8 +995,7 @@ class _InstructorSectionDetailsScreenState
                 _emptyState(
                   icon: Icons.menu_book_outlined,
                   title: 'No modules available',
-                  message:
-                      'Modules created for this course will appear here.',
+                  message: 'Modules created for this course will appear here.',
                 )
               else
                 ...data.modules.map((module) {
@@ -1037,8 +1059,7 @@ class _InstructorSectionDetailsScreenState
                 _emptyState(
                   icon: Icons.assignment_outlined,
                   title: 'No section assessments',
-                  message:
-                      'Assessments assigned specifically to this section will appear here.',
+                  message: 'Assessments assigned specifically to this section will appear here.',
                 )
               else
                 ...data.assessments.map((assessment) {
@@ -1130,6 +1151,21 @@ class _InstructorSectionDetailsScreenState
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 18, 16, 24),
       children: [
+        GradeShortcut(
+          icon: Icons.calculate_outlined,
+          title: 'Semester Grades',
+          subtitle:
+              'Set weights, preview results, and post grades for this section.',
+          onTap: () => Navigator.of(context).push(
+            GradeRoute<void>(
+              builder: (_) => InstructorSemesterGradesScreen(
+                courseId: widget.courseId,
+                sectionId: widget.sectionId,
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(height: 16),
         _panel(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -1139,13 +1175,24 @@ class _InstructorSectionDetailsScreenState
                 'Track submissions for section-specific assessments.',
                 trailing: _pill('${data.submissions.length} submissions'),
               ),
+              for (final assessment in data.assessments.where(
+                (item) =>
+                    item['deliveryType'] == 'external_link' &&
+                    ['published', 'closed'].contains(item['status']),
+              ))
+                TextButton.icon(
+                  onPressed: () => _openGrading(assessment),
+                  icon: const Icon(Icons.edit_note),
+                  label: Text(
+                    'Manual Grade Input: ${_text(assessment['title'])}',
+                  ),
+                ),
               const SizedBox(height: 10),
               if (data.submissions.isEmpty)
                 _emptyState(
                   icon: Icons.grade_outlined,
                   title: 'Nothing to grade yet',
-                  message:
-                      'Submissions for section-specific assessments will appear here.',
+                  message: 'Submissions for section-specific assessments will appear here.',
                 )
               else
                 ...data.submissions.map((submission) {
@@ -1155,8 +1202,9 @@ class _InstructorSectionDetailsScreenState
                   final score = submission['score'];
                   final status = _text(submission['status']);
 
-                  final displayStudent =
-                      studentName.isEmpty ? studentId : studentName;
+                  final displayStudent = studentName.isEmpty
+                      ? studentId
+                      : studentName;
 
                   return _contentCard(
                     leading: _leadingAvatar(
@@ -1201,10 +1249,7 @@ class _InstructorSectionDetailsScreenState
           leading: IconButton(
             tooltip: 'Back',
             onPressed: () => Navigator.of(context).maybePop(),
-            icon: const Icon(
-              Icons.arrow_back_rounded,
-              color: heading,
-            ),
+            icon: const Icon(Icons.arrow_back_rounded, color: heading),
           ),
           title: const Text(
             'Section Details',
@@ -1215,6 +1260,30 @@ class _InstructorSectionDetailsScreenState
             ),
           ),
           actions: [
+            IconButton(
+              tooltip: 'Live Classes',
+              onPressed: () => Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => LiveClassesScreen(
+                    courseId: widget.courseId,
+                    sectionId: widget.sectionId,
+                  ),
+                ),
+              ),
+              icon: const Icon(Icons.video_call_outlined, color: teal),
+            ),
+            RoundGradeAction(
+              label: 'Compute & Finalize Semester Grades',
+              icon: Icons.calculate_outlined,
+              onTap: () => Navigator.of(context).push(
+                GradeRoute<void>(
+                  builder: (_) => InstructorSemesterGradesScreen(
+                    courseId: widget.courseId,
+                    sectionId: widget.sectionId,
+                  ),
+                ),
+              ),
+            ),
             IconButton(
               tooltip: 'Refresh section',
               onPressed: _refresh,
@@ -1270,9 +1339,7 @@ class _InstructorSectionDetailsScreenState
                         const SizedBox(height: 16),
                         FilledButton.icon(
                           onPressed: _refresh,
-                          style: FilledButton.styleFrom(
-                            backgroundColor: teal,
-                          ),
+                          style: FilledButton.styleFrom(backgroundColor: teal),
                           icon: const Icon(Icons.refresh_rounded),
                           label: const Text('Try again'),
                         ),
